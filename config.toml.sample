@@ -1,0 +1,9 @@
+recipes_file = "recipes.txt"
+reports_path = "reports"
+munki_repo= "/Users/Shared/munki_repo"
+# Number of concurrent AutoPKG processes allowed
+max_processes=5
+# How often to check for new recipes
+autopkg_check_interval=300
+# Should autopkg process time out if a recipe takes to long?
+autopkg_exec_timeout=3600
