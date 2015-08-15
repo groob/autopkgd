@@ -18,6 +18,7 @@ var (
 	wg      sync.WaitGroup
 	conf    Config
 	fConfig = flag.String("config", "", "configuration file to load")
+	fSlack  = flag.Bool("slack", false, "Send reports to slack?")
 )
 
 // autopkgd config
@@ -30,6 +31,9 @@ type Config struct {
 	MaxProcesses        int           `toml:"max_processes"`
 	ExecTimeout         time.Duration `toml:"autopkg_exec_timeout"`
 	CheckInterval       time.Duration `toml:"autopkg_check_interval"`
+
+	// Slack config
+	Slack slack `toml:"slack"`
 }
 
 type processor struct {
@@ -118,12 +122,16 @@ func process(done chan bool) {
 	wg.Add(1)
 	go readRecipeList(recipes)
 
+	// Send reports to slack if flag is enabled
+	if *fSlack {
+		go notifySlack(reports)
+	}
+
 	go func() {
 		for report := range reports {
 			if _, ok := report.SummaryResults["munki_importer_summary_result"]; ok {
 				catalogsModified = true
 			}
-			//TODO: add slack notification here!
 		}
 	}()
 
@@ -173,6 +181,7 @@ func init() {
 	if conf.CheckInterval == 0 {
 		conf.CheckInterval = 1
 	}
+
 }
 
 func main() {
