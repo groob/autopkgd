@@ -1,4 +1,6 @@
+# List of recipes, separated by newline.
 recipes_file = "recipes.txt"
+# A folder where autopkgd stores individual reports.
 reports_path = "reports"
 munki_repo= "/Users/Shared/munki_repo"
 # Number of concurrent AutoPKG processes allowed
