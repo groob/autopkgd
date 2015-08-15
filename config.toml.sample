@@ -10,6 +10,6 @@ autopkg_exec_timeout=3600
 
 [slack]
 webhook_url = "https://hooks.slack.com/services/..."
-channel = "#munki"
+channel = "munki"
 username = "autopkg"
 icon_url = "https://slack.com/img/icons/app-57.png"
