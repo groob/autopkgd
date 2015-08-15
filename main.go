@@ -19,6 +19,7 @@ var (
 	conf    Config
 	fConfig = flag.String("config", "", "configuration file to load")
 	fSlack  = flag.Bool("slack", false, "Send reports to slack?")
+	fCheck  = flag.Bool("check", false, "autopkg check option")
 )
 
 // autopkgd config
@@ -74,6 +75,11 @@ func readRecipeList(recipes chan string) {
 
 func runAutopkg(recipe string) *autopkgReport {
 	autopkgCmd := exec.Command(conf.AutopkgCmdPath, "run", "--report-plist="+conf.ReportsPath+"/"+recipe)
+
+	if *fCheck {
+		autopkgCmd.Args = append(autopkgCmd.Args, "--check")
+	}
+
 	autopkgCmd.Args = append(autopkgCmd.Args, recipe)
 	d := deputy.Deputy{
 		Errors:    deputy.FromStderr,
