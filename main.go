@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"sync"
@@ -162,6 +163,58 @@ func process(done chan bool) {
 
 }
 
+func autopkgInfoHandler(w http.ResponseWriter, r *http.Request) {
+	msg := &slackMsg{
+		Channel:  conf.Slack.Channel,
+		Username: conf.Slack.Username,
+		Parse:    "full",
+		IconUrl:  conf.Slack.IconUrl,
+	}
+	recipe := r.URL.Path[len("/info/"):]
+	autopkgCmd := exec.Command(conf.AutopkgCmdPath, "info", recipe)
+	output, err := autopkgCmd.Output()
+	if err != nil {
+		msg.Text = "```\n" + err.Error() + "\n```"
+	}
+	msg.Text = "```\n" + recipe + "\n" + string(output) + "\n```"
+	err = msg.Post(conf.Slack.WebhookUrl)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func autopkgRunHandler(w http.ResponseWriter, r *http.Request) {
+	var catalogsModified bool
+	recipe := r.URL.Path[len("/run/"):]
+	reports := make(chan *autopkgReport)
+
+	if *fSlack {
+		go notifySlack(reports)
+	}
+
+	go func() {
+		for report := range reports {
+			if _, ok := report.SummaryResults["munki_importer_summary_result"]; ok {
+				catalogsModified = true
+			}
+		}
+	}()
+
+	reports <- runAutopkg(recipe)
+
+	if catalogsModified {
+		makeCatalogs()
+	}
+
+	close(reports)
+}
+
+func serve() {
+	http.HandleFunc("/run/", autopkgRunHandler)
+	http.HandleFunc("/info/", autopkgInfoHandler)
+	log.Fatal(http.ListenAndServe(":8881", nil))
+}
+
 func init() {
 	flag.Parse()
 	if _, err := toml.DecodeFile(*fConfig, &conf); err != nil {
@@ -191,6 +244,7 @@ func init() {
 }
 
 func main() {
+	go serve()
 	done := make(chan bool)
 	ticker := time.NewTicker(time.Second * conf.CheckInterval).C
 	for {
