@@ -16,11 +16,14 @@ import (
 )
 
 var (
-	wg      sync.WaitGroup
-	conf    Config
-	fConfig = flag.String("config", "", "configuration file to load")
-	fSlack  = flag.Bool("slack", false, "Send reports to slack?")
-	fCheck  = flag.Bool("check", false, "autopkg check option")
+	wg       sync.WaitGroup
+	conf     Config
+	fConfig  = flag.String("config", "", "configuration file to load")
+	fSlack   = flag.Bool("slack", false, "Send reports to slack?")
+	fCheck   = flag.Bool("check", false, "autopkg check option")
+	fVersion = flag.Bool("version", false, "display the version")
+	// Version string
+	Version = "unreleased"
 )
 
 // autopkgd config
@@ -165,6 +168,12 @@ func process(done chan bool) {
 
 func init() {
 	flag.Parse()
+
+	if *fVersion {
+		fmt.Printf("autopkgd - version %s\n", Version)
+		os.Exit(0)
+	}
+
 	if _, err := toml.DecodeFile(*fConfig, &conf); err != nil {
 		log.Fatal(err)
 	}
