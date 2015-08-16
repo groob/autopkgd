@@ -2,3 +2,4 @@
 autopkgd
 *.toml
 reports
+pkg
