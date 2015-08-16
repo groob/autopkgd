@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -186,6 +187,24 @@ func init() {
 
 	if conf.CheckInterval == 0 {
 		conf.CheckInterval = 1
+	}
+
+	// is report path configured?
+	if conf.ReportsPath == "" {
+		fmt.Println("You must specify a directory for reports to be saved in your config")
+		os.Exit(1)
+	}
+
+	// does report path exist?
+	fileInfo, err := os.Stat(conf.ReportsPath)
+	if os.IsNotExist(err) {
+		fmt.Printf("No such file or directory: %s\n", conf.ReportsPath)
+		os.Exit(1)
+	}
+
+	if !fileInfo.IsDir() {
+		fmt.Printf("%v must be a directory\n", conf.ReportsPath)
+		os.Exit(1)
 	}
 
 }
