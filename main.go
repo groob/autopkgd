@@ -15,6 +15,11 @@ import (
 	"github.com/juju/deputy"
 )
 
+var (
+	// Version string
+	Version = "unreleased"
+)
+
 // Config autopkgd config
 type Config struct {
 	AutopkgCmdPath      string        `toml:"autopkg_path,omitempty"`
@@ -107,6 +112,7 @@ func process(done chan<- bool, concurrency int, slackReport, check bool, recipeF
 	}()
 
 	// create a channel of recipes for each worker to run
+	// once the file is read, close the channel
 	recipes := make(chan string)
 	go func() {
 		defer wg.Done()
@@ -166,8 +172,6 @@ func main() {
 		fSlack   = flag.Bool("slack", false, "Send reports to slack?")
 		fCheck   = flag.Bool("check", false, "autopkg check option")
 		fVersion = flag.Bool("version", false, "display the version")
-		// Version string
-		Version = "unreleased"
 	)
 	flag.Parse()
 
@@ -202,7 +206,7 @@ func main() {
 
 	// is report path configured?
 	if conf.ReportsPath == "" {
-		fmt.Println("You must specify a directory for reports to be saved in your config")
+		fmt.Println("you must specify a directory for reports to be saved in your config")
 		os.Exit(1)
 	}
 
