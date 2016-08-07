@@ -41,30 +41,6 @@ type autopkgReport struct {
 	SummaryResults map[string]processor `plist:"summary_results"`
 }
 
-// read each AutoPkg recipe from a text file and
-// send on a channel.
-// close channel when done.
-func readRecipeList(recipes chan<- string, recipeFile string, wg sync.WaitGroup) {
-	defer wg.Done()
-	file, err := os.Open(recipeFile)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		recipe := scanner.Text()
-		// ignore empty lines, comments and MakeCatalogs.munki
-		if len(recipe) == 0 || recipe == "MakeCatalogs.munki" || []byte(recipe)[0] == []byte("#")[0] {
-			continue
-		}
-		recipes <- recipe
-	}
-	close(recipes)
-}
-
 func runAutopkg(recipe, reportsPath, cmdPath string, check bool, execTimeout time.Duration) autopkgReport {
 	autopkgCmd := exec.Command(cmdPath, "run", "--report-plist="+reportsPath+"/"+recipe)
 
@@ -118,10 +94,11 @@ func makeCatalogs(makeCatalogsPath, repoPath string, execTimeout time.Duration) 
 
 func process(done chan<- bool, concurrency int, slackReport, check bool, recipeFile, autopkgCmdPath, makecatalogsPath, repoPath, reportsPath string, execTimeout time.Duration, slackConfig slack) {
 	var catalogsModified bool
-	recipes := make(chan string)
-	reports := make(chan autopkgReport)
 	sem := make(chan int, concurrency)
 
+	// make a channel of autopkgReports and create workers
+	// close the reports channel when done
+	reports := make(chan autopkgReport)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -129,7 +106,28 @@ func process(done chan<- bool, concurrency int, slackReport, check bool, recipeF
 		close(reports)
 	}()
 
-	go readRecipeList(recipes, recipeFile, wg)
+	// create a channel of recipes for each worker to run
+	recipes := make(chan string)
+	go func() {
+		defer wg.Done()
+		file, err := os.Open(recipeFile)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			recipe := scanner.Text()
+			// ignore empty lines, comments and MakeCatalogs.munki
+			if len(recipe) == 0 || recipe == "MakeCatalogs.munki" || []byte(recipe)[0] == []byte("#")[0] {
+				continue
+			}
+			recipes <- recipe
+		}
+		close(recipes)
+	}()
 
 	// Send reports to slack if flag is enabled
 	if slackReport {
@@ -220,6 +218,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	// loop through all the recipes at an interval
+	// done blocks untill process finishes
 	done := make(chan bool)
 	ticker := time.NewTicker(time.Second * conf.CheckInterval).C
 	for {
