@@ -11,22 +11,11 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/groob/plist"
 	"github.com/juju/deputy"
-	"howett.net/plist"
 )
 
-var (
-	wg       sync.WaitGroup
-	conf     Config
-	fConfig  = flag.String("config", "", "configuration file to load")
-	fSlack   = flag.Bool("slack", false, "Send reports to slack?")
-	fCheck   = flag.Bool("check", false, "autopkg check option")
-	fVersion = flag.Bool("version", false, "display the version")
-	// Version string
-	Version = "unreleased"
-)
-
-// autopkgd config
+// Config autopkgd config
 type Config struct {
 	AutopkgCmdPath      string        `toml:"autopkg_path,omitempty"`
 	MakecatalogsCmdPath string        `toml:"makecatalogs_path,omitempty"`
@@ -55,11 +44,12 @@ type autopkgReport struct {
 // read each AutoPkg recipe from a text file and
 // send on a channel.
 // close channel when done.
-func readRecipeList(recipes chan string) {
+func readRecipeList(recipes chan<- string, recipeFile string, wg sync.WaitGroup) {
 	defer wg.Done()
-	file, err := os.Open(conf.RecipesFile)
+	file, err := os.Open(recipeFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 	defer file.Close()
 
@@ -67,9 +57,7 @@ func readRecipeList(recipes chan string) {
 	for scanner.Scan() {
 		recipe := scanner.Text()
 		// ignore empty lines, comments and MakeCatalogs.munki
-		if len(recipe) == 0 ||
-			recipe == "MakeCatalogs.munki" ||
-			[]byte(recipe)[0] == []byte("#")[0] {
+		if len(recipe) == 0 || recipe == "MakeCatalogs.munki" || []byte(recipe)[0] == []byte("#")[0] {
 			continue
 		}
 		recipes <- recipe
@@ -77,10 +65,10 @@ func readRecipeList(recipes chan string) {
 	close(recipes)
 }
 
-func runAutopkg(recipe string) *autopkgReport {
-	autopkgCmd := exec.Command(conf.AutopkgCmdPath, "run", "--report-plist="+conf.ReportsPath+"/"+recipe)
+func runAutopkg(recipe, reportsPath, cmdPath string, check bool, execTimeout time.Duration) autopkgReport {
+	autopkgCmd := exec.Command(cmdPath, "run", "--report-plist="+reportsPath+"/"+recipe)
 
-	if *fCheck {
+	if check {
 		autopkgCmd.Args = append(autopkgCmd.Args, "--check")
 	}
 
@@ -88,53 +76,64 @@ func runAutopkg(recipe string) *autopkgReport {
 	d := deputy.Deputy{
 		Errors:    deputy.FromStderr,
 		StdoutLog: func(b []byte) { log.Print(string(b)) },
-		Timeout:   time.Second * conf.ExecTimeout,
+		Timeout:   time.Second * execTimeout,
 	}
 	if err := d.Run(autopkgCmd); err != nil {
-		log.Print(err)
+		log.Println(err)
+		return autopkgReport{}
 	}
-	report, err := readReportPlist(conf.ReportsPath + "/" + recipe)
+	report, err := readReportPlist(reportsPath + "/" + recipe)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return autopkgReport{}
 	}
 	return report
 }
 
-func readReportPlist(path string) (*autopkgReport, error) {
-	r := &autopkgReport{}
+func readReportPlist(path string) (autopkgReport, error) {
+	r := autopkgReport{}
 	f, err := os.Open(path)
 	if err != nil {
 		return r, err
 	}
 	defer f.Close()
-	return r, plist.NewDecoder(f).Decode(r)
+	return r, plist.NewDecoder(f).Decode(&r)
 }
 
-func makeCatalogs() {
-	makecatalogsCmd := exec.Command(conf.MakecatalogsCmdPath,
-		conf.MunkiRepoPath)
+func makeCatalogs(makeCatalogsPath, repoPath string, execTimeout time.Duration) {
+	makecatalogsCmd := exec.Command(
+		makeCatalogsPath,
+		repoPath,
+	)
 	d := deputy.Deputy{
 		Errors:    deputy.FromStderr,
-		StdoutLog: func(b []byte) { log.Print(string(b)) },
-		Timeout:   time.Second * conf.ExecTimeout,
+		StdoutLog: func(b []byte) { log.Println(string(b)) },
+		Timeout:   time.Second * execTimeout,
 	}
 	if err := d.Run(makecatalogsCmd); err != nil {
-		log.Print(err)
+		log.Println(err)
+		return
 	}
 }
 
-func process(done chan bool) {
+func process(done chan<- bool, concurrency int, slackReport, check bool, recipeFile, autopkgCmdPath, makecatalogsPath, repoPath, reportsPath string, execTimeout time.Duration, slackConfig slack) {
 	var catalogsModified bool
 	recipes := make(chan string)
-	reports := make(chan *autopkgReport)
-	sem := make(chan int, conf.MaxProcesses)
+	reports := make(chan autopkgReport)
+	sem := make(chan int, concurrency)
 
+	var wg sync.WaitGroup
 	wg.Add(1)
-	go readRecipeList(recipes)
+	go func() {
+		wg.Wait()
+		close(reports)
+	}()
+
+	go readRecipeList(recipes, recipeFile, wg)
 
 	// Send reports to slack if flag is enabled
-	if *fSlack {
-		go notifySlack(reports)
+	if slackReport {
+		go notifySlack(reports, slackConfig)
 	}
 
 	go func() {
@@ -149,24 +148,29 @@ func process(done chan bool) {
 		wg.Add(1)
 		sem <- 1
 		go func(recipe string) {
-			reports <- runAutopkg(recipe)
+			reports <- runAutopkg(recipe, reportsPath, autopkgCmdPath, check, execTimeout)
 			wg.Done()
 			<-sem
 		}(recipe)
 	}
 
-	wg.Wait()
-	close(reports)
-
 	if catalogsModified {
-		makeCatalogs()
+		makeCatalogs(makecatalogsPath, repoPath, execTimeout)
 	}
 
 	done <- true
-
 }
 
-func init() {
+func main() {
+	var (
+		conf     Config
+		fConfig  = flag.String("config", "", "configuration file to load")
+		fSlack   = flag.Bool("slack", false, "Send reports to slack?")
+		fCheck   = flag.Bool("check", false, "autopkg check option")
+		fVersion = flag.Bool("version", false, "display the version")
+		// Version string
+		Version = "unreleased"
+	)
 	flag.Parse()
 
 	if *fVersion {
@@ -216,13 +220,10 @@ func init() {
 		os.Exit(1)
 	}
 
-}
-
-func main() {
 	done := make(chan bool)
 	ticker := time.NewTicker(time.Second * conf.CheckInterval).C
 	for {
-		go process(done)
+		go process(done, conf.MaxProcesses, *fSlack, *fCheck, conf.RecipesFile, conf.AutopkgCmdPath, conf.MakecatalogsCmdPath, conf.ReportsPath, conf.ReportsPath, conf.ExecTimeout, conf.Slack)
 		<-done
 		<-ticker
 	}

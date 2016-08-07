@@ -10,10 +10,10 @@ import (
 )
 
 type slack struct {
-	WebhookUrl string `toml:"webhook_url"`
+	WebhookURL string `toml:"webhook_url"`
 	Channel    string `toml:"channel"`
 	Username   string `toml:"username"`
-	IconUrl    string `toml:"icon_url"`
+	IconURL    string `toml:"icon_url"`
 }
 
 type slackMsg struct {
@@ -21,7 +21,7 @@ type slackMsg struct {
 	Username string `json:"username,omitempty"`
 	Text     string `json:"text"`
 	Parse    string `json:"parse"`
-	IconUrl  string `json:"icon_url,omitempty"`
+	IconURL  string `json:"icon_url,omitempty"`
 }
 
 func (m slackMsg) Encode() (string, error) {
@@ -49,12 +49,12 @@ func (m slackMsg) Post(WebhookURL string) error {
 	return nil
 }
 
-func notifySlack(reports chan *autopkgReport) {
+func notifySlack(reports <-chan autopkgReport, conf slack) {
 	msg := &slackMsg{
-		Channel:  conf.Slack.Channel,
-		Username: conf.Slack.Username,
+		Channel:  conf.Channel,
+		Username: conf.Username,
 		Parse:    "full",
-		IconUrl:  conf.Slack.IconUrl,
+		IconURL:  conf.IconURL,
 	}
 
 	for report := range reports {
@@ -62,9 +62,10 @@ func notifySlack(reports chan *autopkgReport) {
 			for _, row := range summary.DataRows {
 				downloaded := filepath.Base(row["download_path"].(string))
 				msg.Text = "New download: " + downloaded
-				err := msg.Post(conf.Slack.WebhookUrl)
+				err := msg.Post(conf.WebhookURL)
 				if err != nil {
-					log.Fatal(err)
+					log.Println(err)
+					return
 				}
 			}
 		}
@@ -74,9 +75,10 @@ func notifySlack(reports chan *autopkgReport) {
 				name := row["name"].(string)
 				version := row["version"].(string)
 				msg.Text = "New munki import: " + name + " " + version
-				err := msg.Post(conf.Slack.WebhookUrl)
+				err := msg.Post(conf.WebhookURL)
 				if err != nil {
-					log.Fatal(err)
+					log.Println(err)
+					return
 				}
 			}
 		}
