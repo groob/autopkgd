@@ -1,0 +1,13 @@
+{
+    "dependencies": {
+        "github.com/BurntSushi/toml": {
+            "branch": "master"
+        },
+        "github.com/groob/plist": {
+            "revision": "e9ca5cd129407b401d850bc3248338865a7490ae"
+        },
+        "github.com/juju/deputy": {
+            "revision": "9db96ecdd1479ea997e6e6e461e145ddd55ea561"
+        }
+    }
+}

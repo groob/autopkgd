@@ -1,0 +1,27 @@
+{
+    "memo": "fa0ea523e1cefbc0c557136c3de3f6e7057c8e90f5d6aaebb6e42847674c8685",
+    "projects": [
+        {
+            "name": "github.com/BurntSushi/toml",
+            "branch": "master",
+            "revision": "99064174e013895bbd9b025c31100bd1d9b590ca",
+            "packages": [
+                "."
+            ]
+        },
+        {
+            "name": "github.com/groob/plist",
+            "revision": "e9ca5cd129407b401d850bc3248338865a7490ae",
+            "packages": [
+                "."
+            ]
+        },
+        {
+            "name": "github.com/juju/deputy",
+            "revision": "9db96ecdd1479ea997e6e6e461e145ddd55ea561",
+            "packages": [
+                "."
+            ]
+        }
+    ]
+}
